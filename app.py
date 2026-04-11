@@ -186,8 +186,10 @@ def make_heatmap():
         textfont=dict(size=10),
         colorscale=[[0, WHITE], [0.33, '#FFD166'], [0.66, '#EF476F'], [1.0, NAVY]],
         zmin=0, zmax=30,
-        colorbar=dict(title="Rate %", titlefont=dict(size=10),
-                      tickfont=dict(size=9), len=0.8),
+        colorbar=dict(
+            title=dict(text="Rate %", font=dict(size=10)),
+            tickfont=dict(size=9), len=0.8,
+        ),
     ))
     fig.update_layout(
         title="Screening: Insurance × PCP Engagement",
