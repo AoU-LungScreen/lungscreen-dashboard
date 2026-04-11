@@ -92,26 +92,69 @@ def stat_card(label, value, color=NAVY, suffix=''):
 # Figure builders
 # ---------------------------------------------------------------------------
 
-def make_model_table():
+def html_table(df, title=None, status_col=None):
+    """Build a responsive HTML table from a DataFrame.
+    Wrapped in a scrollable div so it reflows on narrow screens.
+    If status_col is given, PASS cells are green-tinted and FLAG cells red-tinted."""
+    header = html.Thead(html.Tr([
+        html.Th(c, style={
+            'backgroundColor': NAVY, 'color': WHITE,
+            'padding': '8px 10px', 'textAlign': 'left',
+            'fontSize': '11px', 'fontWeight': '600',
+            'position': 'sticky', 'top': '0',
+        }) for c in df.columns
+    ]))
+
+    rows = []
+    for _, row in df.iterrows():
+        cells = []
+        for c in df.columns:
+            v = row[c]
+            if isinstance(v, float):
+                txt = f"{v:.3f}"
+            else:
+                txt = str(v)
+            cell_style = {
+                'padding': '7px 10px',
+                'borderBottom': '1px solid #eaeaea',
+                'fontSize': '12px',
+            }
+            if status_col and c == status_col:
+                if v == 'PASS':
+                    cell_style['backgroundColor'] = '#E8F5E9'
+                    cell_style['color'] = GREEN
+                    cell_style['fontWeight'] = '700'
+                elif v == 'FLAG':
+                    cell_style['backgroundColor'] = '#FFEBEE'
+                    cell_style['color'] = RED
+                    cell_style['fontWeight'] = '700'
+            cells.append(html.Td(txt, style=cell_style))
+        rows.append(html.Tr(cells))
+
+    table = html.Table([header, html.Tbody(rows)], style={
+        'width': '100%',
+        'borderCollapse': 'collapse',
+        'backgroundColor': WHITE,
+    })
+
+    wrapper = html.Div([
+        html.H4(title, style={
+            'color': NAVY, 'fontSize': '14px', 'margin': '20px 0 8px 0',
+        }) if title else None,
+        html.Div(table, style={
+            'overflowX': 'auto',
+            'WebkitOverflowScrolling': 'touch',
+            'border': '1px solid #e0e0e0',
+            'borderRadius': '4px',
+        }),
+    ])
+    return wrapper
+
+
+def make_model_table_html():
     display_models = models.copy()
     display_models.columns = ['Model', 'Est.', 'AUC', 'AP', 'Brier', 'n', 'Pos %']
-    fig = go.Figure(data=[go.Table(
-        columnwidth=[180, 50, 55, 55, 55, 60, 50],
-        header=dict(
-            values=list(display_models.columns),
-            fill_color=NAVY, font=dict(color=WHITE, size=11), align='left',
-            height=30,
-        ),
-        cells=dict(
-            values=[display_models[c] for c in display_models.columns],
-            fill_color=[LIGHT], align='left', font=dict(size=10),
-            height=26,
-        ),
-    )])
-    fig.update_layout(height=220, margin=dict(l=5, r=5, t=35, b=5),
-                      paper_bgcolor=WHITE, title="Model Comparison (5-fold CV)",
-                      title_font_size=14)
-    return fig
+    return html_table(display_models, title="Model Comparison (5-fold CV)")
 
 
 def make_heatmap():
@@ -151,7 +194,7 @@ def make_heatmap():
         title_font_size=14,
         height=340,
         margin=dict(l=130, r=10, t=45, b=20),
-        paper_bgcolor=WHITE, plot_bgcolor=WHITE,
+        paper_bgcolor=WHITE, plot_bgcolor=WHITE, autosize=True,
         yaxis=dict(tickfont=dict(size=10)),
         xaxis=dict(tickfont=dict(size=11)),
     )
@@ -186,7 +229,7 @@ def make_disparity_chart(variable):
         height=max(260, len(subset) * 38 + 80),
         showlegend=False,
         margin=dict(l=150, r=60, t=45, b=35),
-        paper_bgcolor=WHITE, plot_bgcolor=WHITE,
+        paper_bgcolor=WHITE, plot_bgcolor=WHITE, autosize=True,
         yaxis=dict(tickfont=dict(size=10)),
     )
     return fig
@@ -221,78 +264,32 @@ def make_auc_chart(variable):
         yaxis_title='AUC-ROC', yaxis_range=[0.5, 1.05],
         height=300,
         margin=dict(t=45, b=40, l=50, r=10),
-        paper_bgcolor=WHITE, plot_bgcolor=WHITE,
+        paper_bgcolor=WHITE, plot_bgcolor=WHITE, autosize=True,
         xaxis=dict(tickfont=dict(size=9), tickangle=-30),
     )
     return fig
 
 
-def make_gaps_table():
+def make_gaps_table_html():
     if gaps.empty:
-        return go.Figure()
-
+        return html.Div()
     display = gaps[['variable', 'n_subgroups', 'auc_gap', 'tpr_gap',
                      'eq_odds_gap', 'screening_rate_gap', 'auc_pass_lt_0_1']].copy()
     display.columns = ['Axis', 'Groups', 'AUC Gap', 'TPR Gap',
                         'EO Gap', 'Rate Gap', 'Status']
-
-    cell_colors = []
-    for col in display.columns:
-        col_colors = []
-        for v in display[col]:
-            if v == 'PASS':
-                col_colors.append('#E8F5E9')
-            elif v == 'FLAG':
-                col_colors.append('#FFEBEE')
-            else:
-                col_colors.append(LIGHT)
-        cell_colors.append(col_colors)
-
-    fig = go.Figure(data=[go.Table(
-        columnwidth=[120, 50, 60, 60, 60, 60, 55],
-        header=dict(
-            values=list(display.columns),
-            fill_color=NAVY, font=dict(color=WHITE, size=10), align='left',
-            height=28,
-        ),
-        cells=dict(
-            values=[display[c] for c in display.columns],
-            fill_color=cell_colors, align='left',
-            font=dict(size=10), height=25,
-        ),
-    )])
-    fig.update_layout(title="Fairness Gaps", title_font_size=14,
-                      height=250, margin=dict(t=40, b=5, l=5, r=5),
-                      paper_bgcolor=WHITE)
-    return fig
+    return html_table(display, title="Fairness Gaps Across Stratification Axes",
+                       status_col='Status')
 
 
-def make_subgroup_table(variable):
+def make_subgroup_table_html(variable):
     subset = fairness[fairness['variable'] == variable].copy()
     if subset.empty:
-        return go.Figure()
-
+        return html.Div("No data for this subgroup.", style={'padding': '20px'})
     cols = ['group', 'n', 'prevalence', 'auc', 'tpr', 'fpr', 'cal_slope']
     available = [c for c in cols if c in subset.columns]
     display = subset[available].copy()
     display.columns = [c.replace('_', ' ').title() for c in available]
-
-    fig = go.Figure(data=[go.Table(
-        header=dict(
-            values=list(display.columns),
-            fill_color=NAVY, font=dict(color=WHITE, size=10), align='left',
-            height=28,
-        ),
-        cells=dict(
-            values=[display[c] for c in display.columns],
-            fill_color=[LIGHT], align='left',
-            font=dict(size=10), height=25,
-        ),
-    )])
-    fig.update_layout(height=max(180, 30 * len(display) + 70),
-                      margin=dict(t=5, b=5, l=5, r=5),
-                      paper_bgcolor=WHITE)
-    return fig
+    return html_table(display)
 
 
 # ---------------------------------------------------------------------------
@@ -323,13 +320,17 @@ app.index_string = '''<!DOCTYPE html>
     {%favicon%}
     {%css%}
     <style>
-        * { box-sizing: border-box; }
-        body { margin: 0; padding: 0; background: ''' + LIGHT + '''; }
+        * { box-sizing: border-box; -webkit-text-size-adjust: 100%; }
+        body { margin: 0; padding: 0; background: ''' + LIGHT + '''; overflow-x: hidden; }
         .Select-control { min-height: 44px !important; }
         .Select-input > input { font-size: 16px !important; }
-        @media (max-width: 600px) {
-            .dash-graph .js-plotly-plot { width: 100% !important; }
-        }
+        /* Force plotly charts to respect container width */
+        .js-plotly-plot, .plotly, .plot-container { width: 100% !important; }
+        .js-plotly-plot .main-svg { width: 100% !important; }
+        /* Hide plotly modebar on all screens — clutter on mobile */
+        .modebar-container { display: none !important; }
+        /* Horizontal scroll for wide tables */
+        .dash-table-container { overflow-x: auto !important; }
     </style>
 </head>
 <body>
@@ -366,9 +367,11 @@ app.layout = html.Div(style={
         "All statistics n ≥ 20",
     ], style={'color': GRAY, 'fontSize': '11px', 'marginBottom': '20px'}),
 
-    # Stat cards row — wraps on mobile
+    # Stat cards — CSS grid, 2 columns on mobile, 5 on desktop
     html.Div(style={
-        'display': 'flex', 'flexWrap': 'wrap', 'gap': '8px',
+        'display': 'grid',
+        'gridTemplateColumns': 'repeat(auto-fit, minmax(140px, 1fr))',
+        'gap': '8px',
         'marginBottom': '20px',
     }, children=[
         stat_card("Eligible", f"{summary['n_total']:,}", NAVY),
@@ -388,8 +391,9 @@ app.layout = html.Div(style={
                 selected_style={'padding': '8px 12px', 'borderTop': f'3px solid {NAVY}'},
                 children=[
             html.Div(style={'padding': '12px 0'}, children=[
-                dcc.Graph(figure=make_model_table(), config=CHART_CONFIG),
-                dcc.Graph(figure=make_heatmap(), config=CHART_CONFIG),
+                make_model_table_html(),
+                dcc.Graph(figure=make_heatmap(), config=CHART_CONFIG,
+                          style={'width': '100%', 'marginTop': '20px'}),
 
                 # Key finding callout
                 html.Div(style={
@@ -426,8 +430,10 @@ app.layout = html.Div(style={
                     style={'marginBottom': '16px', 'fontSize': '14px'},
                     clearable=False,
                 ),
-                dcc.Graph(id='disparity-chart', config=CHART_CONFIG),
-                dcc.Graph(id='auc-chart', config=CHART_CONFIG),
+                dcc.Graph(id='disparity-chart', config=CHART_CONFIG,
+                          style={'width': '100%'}),
+                dcc.Graph(id='auc-chart', config=CHART_CONFIG,
+                          style={'width': '100%'}),
             ]),
         ]),
 
@@ -437,10 +443,10 @@ app.layout = html.Div(style={
                 selected_style={'padding': '8px 12px', 'borderTop': f'3px solid {NAVY}'},
                 children=[
             html.Div(style={'padding': '12px 0'}, children=[
-                dcc.Graph(figure=make_gaps_table(), config=CHART_CONFIG),
+                make_gaps_table_html(),
 
                 html.H3("Subgroup Metrics", style={
-                    'color': NAVY, 'fontSize': '16px', 'marginTop': '20px',
+                    'color': NAVY, 'fontSize': '16px', 'marginTop': '24px',
                 }),
                 html.Label("Select axis:", style={
                     'fontWeight': 'bold', 'fontSize': '13px',
@@ -453,7 +459,7 @@ app.layout = html.Div(style={
                     style={'marginBottom': '16px', 'fontSize': '14px'},
                     clearable=False,
                 ),
-                dcc.Graph(id='subgroup-table', config=CHART_CONFIG),
+                html.Div(id='subgroup-table-container'),
             ]),
         ]),
     ]),
@@ -490,11 +496,11 @@ def update_disparity(variable):
 
 
 @callback(
-    Output('subgroup-table', 'figure'),
+    Output('subgroup-table-container', 'children'),
     Input('fairness-dropdown', 'value'),
 )
 def update_subgroup(variable):
-    return make_subgroup_table(variable)
+    return make_subgroup_table_html(variable)
 
 
 # ---------------------------------------------------------------------------
