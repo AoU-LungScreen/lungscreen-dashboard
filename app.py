@@ -1,8 +1,8 @@
 """
 LungScreen — Public Equity Dashboard
 =====================================
-Aggregate-only Dash app for sharing lung cancer screening adherence
-findings with clinical stakeholders, grant reviewers, and the public.
+Mobile-first, aggregate-only Dash app for sharing lung cancer screening
+adherence findings with clinical stakeholders.
 
 All data is pre-aggregated with cell sizes >= 20 per All of Us policy.
 No individual-level data is included.
@@ -29,7 +29,7 @@ ins_pcp = pd.DataFrame(bundle['insurance_pcp'])
 summary = bundle['cohort_summary']
 
 # ---------------------------------------------------------------------------
-# Color scheme
+# Colors
 # ---------------------------------------------------------------------------
 NAVY    = '#1B4965'
 TEAL    = '#62B6CB'
@@ -40,7 +40,7 @@ LIGHT   = '#F8F9FA'
 WHITE   = '#FFFFFF'
 
 # ---------------------------------------------------------------------------
-# Insurance display helpers
+# Insurance helpers
 # ---------------------------------------------------------------------------
 INS_ORDER = ['va_other_gov', 'aca_marketplace', 'medicare',
              'private_employer', 'medicaid', 'unknown', 'uninsured_or_selfpay']
@@ -55,53 +55,68 @@ INS_LABELS = {
 }
 
 # ---------------------------------------------------------------------------
-# Build figures
+# Responsive chart config — disable modebar on mobile, allow scroll zoom
+# ---------------------------------------------------------------------------
+CHART_CONFIG = {
+    'displayModeBar': False,
+    'responsive': True,
+    'scrollZoom': False,
+}
+
+RESPONSIVE_MARGIN = dict(l=10, r=10, t=45, b=30)
+
+
+# ---------------------------------------------------------------------------
+# Stat card component (mobile-friendly)
+# ---------------------------------------------------------------------------
+def stat_card(label, value, color=NAVY, suffix=''):
+    return html.Div(style={
+        'backgroundColor': WHITE,
+        'border': f'1px solid #e0e0e0',
+        'borderLeft': f'4px solid {color}',
+        'borderRadius': '6px',
+        'padding': '14px 16px',
+        'textAlign': 'center',
+        'flex': '1 1 140px',
+        'minWidth': '120px',
+    }, children=[
+        html.Div(f"{value}{suffix}",
+                 style={'fontSize': '26px', 'fontWeight': '700', 'color': color}),
+        html.Div(label,
+                 style={'fontSize': '11px', 'color': GRAY, 'textTransform': 'uppercase',
+                        'letterSpacing': '0.5px', 'marginTop': '4px'}),
+    ])
+
+
+# ---------------------------------------------------------------------------
+# Figure builders
 # ---------------------------------------------------------------------------
 
-def make_stat_cards():
-    fig = make_subplots(
-        rows=1, cols=5,
-        specs=[[{"type": "indicator"}] * 5],
-        subplot_titles=["USPSTF Eligible", "Screened", "Screening Rate",
-                        "PCP Engaged", "Flagged for Outreach"],
-    )
-    vals = [
-        (summary['n_total'], NAVY, ''),
-        (summary['n_screened'], GREEN, ''),
-        (summary['screening_rate'], RED, '%'),
-        (summary['n_pcp'], TEAL, ''),
-        (summary['n_outreach'], RED, ''),
-    ]
-    for i, (v, c, s) in enumerate(vals):
-        fig.add_trace(go.Indicator(
-            mode="number", value=v,
-            number=dict(font=dict(size=34, color=c), suffix=s),
-        ), row=1, col=i + 1)
-    fig.update_layout(height=170, margin=dict(t=40, b=10, l=10, r=10),
-                      paper_bgcolor=WHITE, plot_bgcolor=WHITE)
-    return fig
-
-
 def make_model_table():
+    display_models = models.copy()
+    display_models.columns = ['Model', 'Est.', 'AUC', 'AP', 'Brier', 'n', 'Pos %']
     fig = go.Figure(data=[go.Table(
+        columnwidth=[180, 50, 55, 55, 55, 60, 50],
         header=dict(
-            values=['Model', 'Estimator', 'AUC', 'AP', 'Brier', 'n', 'Pos Rate (%)'],
-            fill_color=NAVY, font=dict(color=WHITE, size=12), align='left',
+            values=list(display_models.columns),
+            fill_color=NAVY, font=dict(color=WHITE, size=11), align='left',
+            height=30,
         ),
         cells=dict(
-            values=[models[c] for c in models.columns],
-            fill_color=[LIGHT], align='left', font=dict(size=11),
+            values=[display_models[c] for c in display_models.columns],
+            fill_color=[LIGHT], align='left', font=dict(size=10),
+            height=26,
         ),
     )])
-    fig.update_layout(title="Model Comparison (5-fold CV)", height=230,
-                      margin=dict(t=40, b=10, l=10, r=10),
-                      paper_bgcolor=WHITE)
+    fig.update_layout(height=220, margin=dict(l=5, r=5, t=35, b=5),
+                      paper_bgcolor=WHITE, title="Model Comparison (5-fold CV)",
+                      title_font_size=14)
     return fig
 
 
 def make_heatmap():
     pivot = ins_pcp.pivot(index='insurance_status', columns='has_pcp', values='rate_pct')
-    pivot.columns = ['No PCP visit', 'Has PCP visit']
+    pivot.columns = ['No PCP', 'Has PCP']
     n_pivot = ins_pcp.pivot(index='insurance_status', columns='has_pcp', values='n')
 
     ordered = [i for i in INS_ORDER if i in pivot.index]
@@ -125,14 +140,20 @@ def make_heatmap():
         y=[INS_LABELS.get(i, i) for i in pivot.index],
         text=list(map(list, zip(*[iter(annotations)] * len(pivot.columns)))),
         texttemplate="%{text}",
+        textfont=dict(size=10),
         colorscale=[[0, WHITE], [0.33, '#FFD166'], [0.66, '#EF476F'], [1.0, NAVY]],
         zmin=0, zmax=30,
-        colorbar=dict(title="Screening %"),
+        colorbar=dict(title="Rate %", titlefont=dict(size=10),
+                      tickfont=dict(size=9), len=0.8),
     ))
     fig.update_layout(
-        title="Screening Rate: Insurance × PCP Engagement (strict USPSTF cohort)",
-        height=380, margin=dict(t=50, b=20, l=160, r=20),
+        title="Screening: Insurance × PCP Engagement",
+        title_font_size=14,
+        height=340,
+        margin=dict(l=130, r=10, t=45, b=20),
         paper_bgcolor=WHITE, plot_bgcolor=WHITE,
+        yaxis=dict(tickfont=dict(size=10)),
+        xaxis=dict(tickfont=dict(size=11)),
     )
     return fig
 
@@ -151,19 +172,22 @@ def make_disparity_chart(variable):
     fig.add_trace(go.Bar(
         y=subset['group'], x=subset['rate_pct'],
         orientation='h', marker_color=colors,
-        text=[f"{r:.1f}% (n={n:,})" for r, n in
-              zip(subset['rate_pct'], subset['n'])],
+        text=[f"{r:.1f}%" for r in subset['rate_pct']],
         textposition='outside',
+        textfont=dict(size=10),
     ))
     fig.add_vline(x=overall, line_dash="dash", line_color=GRAY,
-                  annotation_text=f"Overall: {overall:.1f}%")
+                  annotation_text=f"Overall: {overall:.1f}%",
+                  annotation_font_size=10)
     fig.update_layout(
-        title=f'Screening Rate by {variable.replace("_", " ").title()}',
-        xaxis_title='Screening Rate (%)',
-        height=max(300, len(subset) * 42 + 100),
+        title=f'Screening Rate: {variable.replace("_", " ").title()}',
+        title_font_size=14,
+        xaxis_title='Rate (%)',
+        height=max(260, len(subset) * 38 + 80),
         showlegend=False,
-        margin=dict(l=180, r=80, t=50, b=40),
+        margin=dict(l=150, r=60, t=45, b=35),
         paper_bgcolor=WHITE, plot_bgcolor=WHITE,
+        yaxis=dict(tickfont=dict(size=10)),
     )
     return fig
 
@@ -188,14 +212,17 @@ def make_auc_chart(variable):
         marker_color=TEAL,
         text=[f"{a:.3f}" for a in subset['auc']],
         textposition='outside',
+        textfont=dict(size=10),
         error_y=error_y,
     ))
     fig.update_layout(
-        title=f'Model AUC by {variable.replace("_", " ").title()}',
+        title=f'Model AUC: {variable.replace("_", " ").title()}',
+        title_font_size=14,
         yaxis_title='AUC-ROC', yaxis_range=[0.5, 1.05],
-        height=350,
-        margin=dict(t=50, b=40, l=60, r=20),
+        height=300,
+        margin=dict(t=45, b=40, l=50, r=10),
         paper_bgcolor=WHITE, plot_bgcolor=WHITE,
+        xaxis=dict(tickfont=dict(size=9), tickangle=-30),
     )
     return fig
 
@@ -204,10 +231,15 @@ def make_gaps_table():
     if gaps.empty:
         return go.Figure()
 
+    display = gaps[['variable', 'n_subgroups', 'auc_gap', 'tpr_gap',
+                     'eq_odds_gap', 'screening_rate_gap', 'auc_pass_lt_0_1']].copy()
+    display.columns = ['Axis', 'Groups', 'AUC Gap', 'TPR Gap',
+                        'EO Gap', 'Rate Gap', 'Status']
+
     cell_colors = []
-    for col in gaps.columns:
+    for col in display.columns:
         col_colors = []
-        for v in gaps[col]:
+        for v in display[col]:
             if v == 'PASS':
                 col_colors.append('#E8F5E9')
             elif v == 'FLAG':
@@ -217,19 +249,20 @@ def make_gaps_table():
         cell_colors.append(col_colors)
 
     fig = go.Figure(data=[go.Table(
+        columnwidth=[120, 50, 60, 60, 60, 60, 55],
         header=dict(
-            values=[c.replace('_', ' ').title() for c in gaps.columns],
-            fill_color=NAVY, font=dict(color=WHITE, size=11), align='left',
+            values=list(display.columns),
+            fill_color=NAVY, font=dict(color=WHITE, size=10), align='left',
+            height=28,
         ),
         cells=dict(
-            values=[gaps[c] for c in gaps.columns],
-            fill_color=cell_colors,
-            align='left', font=dict(size=11),
-            format=[None, None, '.3f', '.3f', '.3f', '.3f', '.3f', None],
+            values=[display[c] for c in display.columns],
+            fill_color=cell_colors, align='left',
+            font=dict(size=10), height=25,
         ),
     )])
-    fig.update_layout(title="Fairness Gaps Across Stratification Axes",
-                      height=280, margin=dict(t=40, b=10, l=10, r=10),
+    fig.update_layout(title="Fairness Gaps", title_font_size=14,
+                      height=250, margin=dict(t=40, b=5, l=5, r=5),
                       paper_bgcolor=WHITE)
     return fig
 
@@ -239,23 +272,25 @@ def make_subgroup_table(variable):
     if subset.empty:
         return go.Figure()
 
-    cols = ['group', 'n', 'prevalence', 'auc', 'auc_ci_lo', 'auc_ci_hi',
-            'tpr', 'fpr', 'ppv', 'cal_slope']
+    cols = ['group', 'n', 'prevalence', 'auc', 'tpr', 'fpr', 'cal_slope']
     available = [c for c in cols if c in subset.columns]
-    subset = subset[available]
+    display = subset[available].copy()
+    display.columns = [c.replace('_', ' ').title() for c in available]
 
     fig = go.Figure(data=[go.Table(
         header=dict(
-            values=[c.replace('_', ' ').title() for c in available],
-            fill_color=NAVY, font=dict(color=WHITE, size=11), align='left',
+            values=list(display.columns),
+            fill_color=NAVY, font=dict(color=WHITE, size=10), align='left',
+            height=28,
         ),
         cells=dict(
-            values=[subset[c] for c in available],
-            fill_color=[LIGHT], align='left', font=dict(size=11),
+            values=[display[c] for c in display.columns],
+            fill_color=[LIGHT], align='left',
+            font=dict(size=10), height=25,
         ),
     )])
-    fig.update_layout(height=max(200, 40 * len(subset) + 80),
-                      margin=dict(t=10, b=10, l=10, r=10),
+    fig.update_layout(height=max(180, 30 * len(display) + 70),
+                      margin=dict(t=5, b=5, l=5, r=5),
                       paper_bgcolor=WHITE)
     return fig
 
@@ -271,94 +306,172 @@ for v in ['race_ethnicity', 'insurance_status', 'sex', 'education_level',
 
 
 # ---------------------------------------------------------------------------
-# Dash app
+# App
 # ---------------------------------------------------------------------------
 app = Dash(__name__)
-server = app.server  # for gunicorn
+server = app.server
 
 app.title = "LungScreen — Equity Dashboard"
 
-app.layout = html.Div(style={'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                              'maxWidth': '1100px', 'margin': '0 auto',
-                              'padding': '20px', 'backgroundColor': WHITE}, children=[
+# Inject viewport meta tag for mobile rendering
+app.index_string = '''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{%title%}</title>
+    {%favicon%}
+    {%css%}
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; background: ''' + LIGHT + '''; }
+        .Select-control { min-height: 44px !important; }
+        .Select-input > input { font-size: 16px !important; }
+        @media (max-width: 600px) {
+            .dash-graph .js-plotly-plot { width: 100% !important; }
+        }
+    </style>
+</head>
+<body>
+    {%app_entry%}
+    <footer>
+        {%config%}
+        {%scripts%}
+        {%renderer%}
+    </footer>
+</body>
+</html>'''
+
+# ---------------------------------------------------------------------------
+# Layout — single column, stacked, mobile-first
+# ---------------------------------------------------------------------------
+app.layout = html.Div(style={
+    'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    'maxWidth': '800px',
+    'margin': '0 auto',
+    'padding': '16px',
+    'backgroundColor': LIGHT,
+}, children=[
 
     # Header
-    html.H1("LungScreen — Equity Dashboard",
-            style={'color': NAVY, 'borderBottom': f'3px solid {TEAL}',
-                   'paddingBottom': '10px'}),
+    html.H1("LungScreen", style={
+        'color': NAVY, 'fontSize': '28px', 'marginBottom': '4px',
+        'borderBottom': f'3px solid {TEAL}', 'paddingBottom': '8px',
+    }),
+    html.P("Fairness-Aware Lung Cancer Screening Adherence",
+           style={'color': GRAY, 'fontSize': '14px', 'marginTop': '0',
+                  'marginBottom': '4px'}),
     html.P([
-        "Fairness-aware lung cancer screening adherence analysis using the NIH ",
-        html.Em("All of Us"), " Research Program (CDR v8 R2024Q3R8). ",
-        "Strict USPSTF cohort: adults aged 50–80 with ≥20 pack-years smoking "
-        "history who currently smoke or quit within 15 years.",
-    ], style={'color': GRAY, 'fontSize': '14px', 'marginBottom': '20px'}),
+        "NIH ", html.Em("All of Us"), " CDR v8 | Strict USPSTF cohort | "
+        "All statistics n ≥ 20",
+    ], style={'color': GRAY, 'fontSize': '11px', 'marginBottom': '20px'}),
 
-    html.P([
-        "All statistics are aggregate with minimum cell sizes ≥ 20 per ",
-        html.Em("All of Us"), " data use policy. No individual-level data is displayed.",
-    ], style={'color': GRAY, 'fontSize': '12px', 'fontStyle': 'italic',
-              'marginBottom': '30px'}),
+    # Stat cards row — wraps on mobile
+    html.Div(style={
+        'display': 'flex', 'flexWrap': 'wrap', 'gap': '8px',
+        'marginBottom': '20px',
+    }, children=[
+        stat_card("Eligible", f"{summary['n_total']:,}", NAVY),
+        stat_card("Screened", f"{summary['n_screened']:,}", GREEN),
+        stat_card("Rate", f"{summary['screening_rate']}", RED, suffix='%'),
+        stat_card("PCP Engaged", f"{summary['n_pcp']:,}", TEAL),
+        stat_card("Outreach", f"{summary['n_outreach']:,}", RED),
+    ]),
 
     # Tabs
-    dcc.Tabs(id='tabs', value='overview', children=[
+    dcc.Tabs(id='tabs', value='overview', style={'fontSize': '13px'},
+             children=[
 
         # ==== Tab 1: Overview ====
-        dcc.Tab(label='Population Overview', value='overview', children=[
-            html.Div(style={'padding': '20px 0'}, children=[
-                dcc.Graph(figure=make_stat_cards(), config={'displayModeBar': False}),
-                dcc.Graph(figure=make_model_table(), config={'displayModeBar': False}),
-                dcc.Graph(figure=make_heatmap()),
+        dcc.Tab(label='Overview', value='overview',
+                style={'padding': '8px 12px'},
+                selected_style={'padding': '8px 12px', 'borderTop': f'3px solid {NAVY}'},
+                children=[
+            html.Div(style={'padding': '12px 0'}, children=[
+                dcc.Graph(figure=make_model_table(), config=CHART_CONFIG),
+                dcc.Graph(figure=make_heatmap(), config=CHART_CONFIG),
+
+                # Key finding callout
+                html.Div(style={
+                    'backgroundColor': '#FFF7E6',
+                    'borderLeft': f'4px solid #F4A261',
+                    'padding': '12px 14px',
+                    'margin': '12px 0',
+                    'fontSize': '13px',
+                    'lineHeight': '1.5',
+                }, children=[
+                    html.Strong("Key finding: "),
+                    f"VA patients screen at 29.5% vs Medicaid at 11.7% among "
+                    f"equally-eligible, PCP-engaged patients — a 2.5× gap driven "
+                    f"by system-level differences, not patient characteristics. "
+                    f"Without any PCP visit, screening is ~1% regardless of insurance.",
+                ]),
             ]),
         ]),
 
         # ==== Tab 2: Disparities ====
-        dcc.Tab(label='Disparity Explorer', value='disparities', children=[
-            html.Div(style={'padding': '20px 0'}, children=[
-                html.Label("Stratify by:", style={'fontWeight': 'bold',
-                                                   'marginRight': '10px'}),
+        dcc.Tab(label='Disparities', value='disparities',
+                style={'padding': '8px 12px'},
+                selected_style={'padding': '8px 12px', 'borderTop': f'3px solid {NAVY}'},
+                children=[
+            html.Div(style={'padding': '12px 0'}, children=[
+                html.Label("Stratify by:", style={
+                    'fontWeight': 'bold', 'fontSize': '13px',
+                    'marginBottom': '6px', 'display': 'block',
+                }),
                 dcc.Dropdown(
                     id='strat-dropdown',
                     options=STRAT_OPTIONS,
                     value='race_ethnicity',
-                    style={'width': '300px', 'marginBottom': '20px'},
+                    style={'marginBottom': '16px', 'fontSize': '14px'},
+                    clearable=False,
                 ),
-                dcc.Graph(id='disparity-chart'),
-                dcc.Graph(id='auc-chart'),
+                dcc.Graph(id='disparity-chart', config=CHART_CONFIG),
+                dcc.Graph(id='auc-chart', config=CHART_CONFIG),
             ]),
         ]),
 
-        # ==== Tab 3: Fairness Report ====
-        dcc.Tab(label='Fairness Report', value='fairness', children=[
-            html.Div(style={'padding': '20px 0'}, children=[
-                dcc.Graph(figure=make_gaps_table(), config={'displayModeBar': False}),
-                html.H3("Detailed Metrics by Subgroup",
-                         style={'color': NAVY, 'marginTop': '30px'}),
-                html.Label("Select axis:", style={'fontWeight': 'bold',
-                                                   'marginRight': '10px'}),
+        # ==== Tab 3: Fairness ====
+        dcc.Tab(label='Fairness', value='fairness',
+                style={'padding': '8px 12px'},
+                selected_style={'padding': '8px 12px', 'borderTop': f'3px solid {NAVY}'},
+                children=[
+            html.Div(style={'padding': '12px 0'}, children=[
+                dcc.Graph(figure=make_gaps_table(), config=CHART_CONFIG),
+
+                html.H3("Subgroup Metrics", style={
+                    'color': NAVY, 'fontSize': '16px', 'marginTop': '20px',
+                }),
+                html.Label("Select axis:", style={
+                    'fontWeight': 'bold', 'fontSize': '13px',
+                    'marginBottom': '6px', 'display': 'block',
+                }),
                 dcc.Dropdown(
                     id='fairness-dropdown',
                     options=STRAT_OPTIONS,
                     value='race_ethnicity',
-                    style={'width': '300px', 'marginBottom': '20px'},
+                    style={'marginBottom': '16px', 'fontSize': '14px'},
+                    clearable=False,
                 ),
-                dcc.Graph(id='subgroup-table'),
+                dcc.Graph(id='subgroup-table', config=CHART_CONFIG),
             ]),
         ]),
     ]),
 
     # Footer
-    html.Div(style={'marginTop': '50px', 'paddingTop': '20px',
-                     'borderTop': '1px solid #ddd', 'color': '#999',
-                     'fontSize': '11px'}, children=[
+    html.Div(style={
+        'marginTop': '30px', 'paddingTop': '14px',
+        'borderTop': '1px solid #ddd', 'fontSize': '10px',
+        'color': '#999', 'lineHeight': '1.5',
+    }, children=[
         html.P([
-            "LungScreen: Fairness-Aware Lung Cancer Screening Adherence Pipeline. ",
-            "Project lead: Dan Zimmerman (FAU Center for Connected Autonomy & AI). ",
+            "LungScreen — FAU Center for Connected Autonomy & AI. ",
             "Clinical lead: Dr. Mark Block, MD (Memorial Healthcare). ",
         ]),
         html.P([
-            "Data source: NIH All of Us Research Program, CDR v8 R2024Q3R8. ",
-            "All aggregate statistics comply with the All of Us Data Use Agreement "
-            "(minimum cell size ≥ 20). No individual-level data is displayed or stored.",
+            "Data: NIH All of Us CDR v8 R2024Q3R8. ",
+            "All statistics ≥ 20 participants per All of Us data use policy. ",
+            "No individual-level data displayed.",
         ]),
     ]),
 ])
