@@ -159,22 +159,27 @@ def make_model_table_html():
 
 def make_heatmap():
     pivot = ins_pcp.pivot(index='insurance_status', columns='has_pcp', values='rate_pct')
-    pivot.columns = ['No PCP', 'Has PCP']
     n_pivot = ins_pcp.pivot(index='insurance_status', columns='has_pcp', values='n')
 
     ordered = [i for i in INS_ORDER if i in pivot.index]
     pivot = pivot.reindex(ordered)
     n_pivot = n_pivot.reindex(ordered)
 
+    # Build annotations using the original integer columns (0, 1), THEN rename
+    # the display columns. Previous bug: renaming pivot.columns before the
+    # loop made the lookup in n_pivot (still [0, 1]) always fail → n=0 everywhere.
     annotations = []
     for idx in pivot.index:
-        for col in pivot.columns:
+        for col in pivot.columns:  # integers 0, 1
             v = pivot.loc[idx, col]
             n = n_pivot.loc[idx, col] if col in n_pivot.columns else 0
             if pd.notna(v) and pd.notna(n):
-                annotations.append(f"{v:.1f}%\nn={int(n):,}")
+                annotations.append(f"{v:.1f}%<br>n={int(n):,}")
             else:
                 annotations.append("")
+
+    # Rename columns now, for display only
+    pivot.columns = ['No PCP', 'Has PCP']
 
     z = pivot.values
     fig = go.Figure(data=go.Heatmap(
