@@ -208,21 +208,40 @@ def make_heatmap():
     return fig
 
 
+# Ordinal orderings (low-to-high / "unknown" first so it sits at the bottom
+# of the horizontal bar chart). For variables not in this dict, the chart
+# sorts by screening rate — that's the informative ordering for nominal axes
+# like race and insurance.
+ORDINAL_ORDERS = {
+    'income_level': ['unknown', '<10k', '10k-25k', '25k-35k', '35k-50k',
+                     '50k-75k', '75k-100k', '100k-150k', '150k-200k', '>200k'],
+    'education_level': ['unknown', 'Less than HS', 'HS',
+                        'Vocational training', 'College or grad'],
+}
+
+
 def make_disparity_chart(variable):
     subset = fairness[fairness['variable'] == variable].copy()
     if subset.empty:
         return go.Figure()
     subset['rate_pct'] = (subset['prevalence'] * 100).round(1)
-    subset = subset.sort_values('rate_pct', ascending=True)
-    overall = summary['screening_rate']
 
+    if variable in ORDINAL_ORDERS:
+        order_map = {g: i for i, g in enumerate(ORDINAL_ORDERS[variable])}
+        subset['__order'] = subset['group'].map(order_map).fillna(999)
+        subset = subset.sort_values('__order').drop(columns='__order')
+    else:
+        subset = subset.sort_values('rate_pct', ascending=True)
+
+    overall = summary['screening_rate']
     colors = [RED if r < overall else GREEN for r in subset['rate_pct']]
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
         y=subset['group'], x=subset['rate_pct'],
         orientation='h', marker_color=colors,
-        text=[f"{r:.1f}%" for r in subset['rate_pct']],
+        text=[f"{r:.1f}% (n={int(n):,})" for r, n in
+              zip(subset['rate_pct'], subset['n'])],
         textposition='outside',
         textfont=dict(size=10),
     ))
@@ -235,7 +254,7 @@ def make_disparity_chart(variable):
         xaxis_title='Rate (%)',
         height=max(260, len(subset) * 38 + 80),
         showlegend=False,
-        margin=dict(l=150, r=60, t=45, b=35),
+        margin=dict(l=150, r=100, t=45, b=35),
         paper_bgcolor=WHITE, plot_bgcolor=WHITE, autosize=True,
         yaxis=dict(tickfont=dict(size=10)),
     )
