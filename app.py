@@ -267,6 +267,13 @@ def make_auc_chart(variable):
     if subset.empty:
         return go.Figure()
 
+    # Match the disparity chart: ordinal variables sort by natural order,
+    # others sort alphabetically (plotly default).
+    if variable in ORDINAL_ORDERS:
+        order_map = {g: i for i, g in enumerate(ORDINAL_ORDERS[variable])}
+        subset['__order'] = subset['group'].map(order_map).fillna(999)
+        subset = subset.sort_values('__order').drop(columns='__order')
+
     error_y = None
     if 'auc_ci_hi' in subset.columns and 'auc_ci_lo' in subset.columns:
         error_y = dict(
@@ -291,7 +298,12 @@ def make_auc_chart(variable):
         height=300,
         margin=dict(t=45, b=40, l=50, r=10),
         paper_bgcolor=WHITE, plot_bgcolor=WHITE, autosize=True,
-        xaxis=dict(tickfont=dict(size=9), tickangle=-30),
+        xaxis=dict(
+            tickfont=dict(size=9), tickangle=-30,
+            # Respect the dataframe order instead of plotly's alpha sort
+            categoryorder='array',
+            categoryarray=list(subset['group']),
+        ),
     )
     return fig
 
